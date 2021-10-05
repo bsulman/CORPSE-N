@@ -30,7 +30,7 @@ SOM_init={'uFastC':0.1,
 # Set model parameters
 # Note that carbon types have names, in contrast to previous version
 params={
-    'vmaxref':{'Fast':9.0,'Slow':.25,'Necro':10.5}, #Relative maximum enzymatic decomp rates (year-1)
+    'vmaxref':{'Fast':9.0,'Slow':.5,'Necro':4.5}, #Relative maximum enzymatic decomp rates (year-1)
     'Ea':{'Fast':5e3,'Slow':30e3,'Necro':3e3},    # Activation energy (Controls temperature sensitivity via Arrhenius relationship)
     'kC':{'Fast':0.01,'Slow':0.01,'Necro':0.01},    # Michaelis-Menton parameter
     'gas_diffusion_exp':0.6,  # Determines suppression of decomp at high soil moisture
@@ -40,7 +40,7 @@ params={
     'et':0.6,          # Fraction of turnover not converted to CO2 (dimensionless)
     'eup':{'Fast':0.6,'Slow':0.05,'Necro':0.6}, # Carbon uptake efficiency (dimensionless fraction)
     'tProtected':75.0,    # Protected C turnover time (years)
-    'protection_rate':{'Fast':0.3,'Slow':0.001,'Necro':1.5}, # Protected carbon formation rate (year-1)
+    'protection_rate':{'Fast':0.1,'Slow':0.0001,'Necro':1.5}, # Protected carbon formation rate (year-1)
     'new_resp_units':True,
     'frac_N_turnover_min':0.2,
     'frac_turnover_slow':0.2,
@@ -70,7 +70,7 @@ fastfrac_site = fastfrac_ECM*ECM_pct/100 + fastfrac_AM*(1-ECM_pct/100)
 litter_CN_AM = 30
 litter_CN_ECM= 50
 litter_CN_site      = litter_CN_ECM*ECM_pct/100 + litter_CN_AM*(1-ECM_pct/100)
-total_inputs = 1.0 # kgC/m2
+total_inputs = 0.5 # kgC/m2
 inputs={'uFastC':total_inputs*fastfrac_site,
         'uSlowC':total_inputs*(1-fastfrac_site),
         'uFastN':total_inputs*fastfrac_site/litter_CN_site,
@@ -79,14 +79,16 @@ inputs={'uFastC':total_inputs*fastfrac_site,
 
 theta=0.5   # fraction of saturation
 
-times=numpy.arange(0,500,10)  # Time steps to evaluate. Defining these in day units but need to convert to years for actual model simulations.
+times=numpy.arange(0,1000,10)  # Time steps to evaluate. Defining these in day units but need to convert to years for actual model simulations.
                       # The ODE solver uses an adaptive timestep but will return these time points
 
 
 
 # Run the simulations
-protCfrac=numpy.zeros((nplots,nclays,nclimates))
-protNfrac=numpy.zeros((nplots,nclays,nclimates))
+protC=numpy.zeros((nplots,nclays,nclimates))
+protN=numpy.zeros((nplots,nclays,nclimates))
+unprotC=numpy.zeros((nplots,nclays,nclimates))
+unprotN=numpy.zeros((nplots,nclays,nclimates))
 n=0
 from CORPSE_deriv import sumCtypes
 for plotnum in range(nplots):
@@ -95,8 +97,10 @@ for plotnum in range(nplots):
             print('Sim {simnum:d} of {totsims:d}. %ECM = {ecmpct:1.1f}, %clay = {claypct:1.1f}, MAT = {mat:1.1f}'.format(
                     simnum=n,totsims=nplots*nclays*nclimates,ecmpct=ECM_pct[plotnum],claypct=clay[claynum],mat=MAT[climnum]))
             result = CORPSE_integrate.run_CORPSE_ODE(T=MAT[climnum],theta=theta,inputs=dict([(k,inputs[k][plotnum]) for k in inputs]),clay=clay[claynum],initvals=SOM_init,params=params,times=times)
-            protCfrac[plotnum,claynum,climnum]=sumCtypes(result.iloc[-1],'p')/(sumCtypes(result.iloc[-1],'p') + sumCtypes(result.iloc[-1],'u') )
-            protNfrac[plotnum,claynum,climnum]=sumCtypes(result.iloc[-1],'p','N')/(sumCtypes(result.iloc[-1],'p','N') + sumCtypes(result.iloc[-1],'u','N') )
+            protC[plotnum,claynum,climnum]=sumCtypes(result.iloc[-1],'p')
+            protN[plotnum,claynum,climnum]=sumCtypes(result.iloc[-1],'p','N')
+            unprotC[plotnum,claynum,climnum]=sumCtypes(result.iloc[-1],'u')
+            unprotN[plotnum,claynum,climnum]=sumCtypes(result.iloc[-1],'u','N')
             n+=1
 
 # Plot the results
@@ -122,7 +126,7 @@ plt.plot(times,result['uSlowC'],label='uSlowC')
 plt.xlabel('Time (days)')
 plt.ylabel('Total carbon')
 plt.title('Total C stock')
-plt.legend()
+plt.legend(fontsize='small')
 
 plt.subplot(212)
 plt.plot(times,totalNitrogen(result),c='k',label='Total N')
@@ -132,42 +136,87 @@ plt.plot(times,result['uSlowN'],label='uSlowN')
 plt.xlabel('Time (days)')
 plt.ylabel('Total nitrogen')
 plt.title('Total N')
-plt.legend()
+plt.legend(fontsize='small')
 
 
-plt.tight_layout()
+
+protCfrac=protC/(protC+unprotC)
+protNfrac=protN/(protN+unprotN)
+
+norm=plt.Normalize(5,20)
+cmap=plt.get_cmap('cool')
+markers=['o','s']
 
 plt.figure('Protected fraction of C and N',figsize=(6,8));plt.clf()
 plt.subplot(211)
-claynum=0;climnum=0
-plt.plot(ECM_pct,protCfrac[:,claynum,climnum],'bo',label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
-claynum=0;climnum=1
-plt.plot(ECM_pct,protCfrac[:,claynum,climnum],'ro',label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
-claynum=1;climnum=0
-plt.plot(ECM_pct,protCfrac[:,claynum,climnum],'bs',label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
-claynum=1;climnum=1
-plt.plot(ECM_pct,protCfrac[:,claynum,climnum],'rs',label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
+for claynum in [0,1]:
+    for climnum in range(len(MAT)):
+        plt.plot(ECM_pct,protCfrac[:,claynum,climnum],marker=markers[claynum],c=cmap(norm(MAT[climnum])),label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
 
 plt.xlabel('ECM percent (%)')
 plt.ylabel('Protected C fraction')
-plt.legend()
+plt.legend(fontsize='small')
 plt.title('Protected SOM C fraction')
 
 plt.subplot(212)
-claynum=0;climnum=0
-plt.plot(ECM_pct,protNfrac[:,claynum,climnum],'bo',label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
-claynum=0;climnum=1
-plt.plot(ECM_pct,protNfrac[:,claynum,climnum],'ro',label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
-claynum=1;climnum=0
-plt.plot(ECM_pct,protNfrac[:,claynum,climnum],'bs',label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
-claynum=1;climnum=1
-plt.plot(ECM_pct,protNfrac[:,claynum,climnum],'rs',label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
+for claynum in [0,1]:
+    for climnum in range(len(MAT)):
+        plt.plot(ECM_pct,protNfrac[:,claynum,climnum],marker=markers[claynum],c=cmap(norm(MAT[climnum])),label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
 
 plt.xlabel('ECM percent (%)')
 plt.ylabel('Protected N fraction')
 # plt.legend()
 plt.title('Protected SOM N fraction')
 
-plt.tight_layout()
+
+
+
+
+plt.figure('N stock and C:N',figsize=(6,8));plt.clf()
+plt.subplot(311)
+for claynum in [0,1]:
+    for climnum in range(len(MAT)):
+        plt.plot(ECM_pct,(protC+unprotC)[:,claynum,climnum],ms=4,marker=markers[claynum],c=cmap(norm(MAT[climnum])),label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
+        plt.plot(ECM_pct,(protC)[:,claynum,climnum],ms=4,marker=markers[claynum],mfc='w',c=cmap(norm(MAT[climnum])))
+
+
+plt.xlabel('ECM percent (%)')
+plt.ylabel('Total C stock')
+# plt.legend()
+plt.title('Total C stock')
+
+plt.subplot(312)
+for claynum in [0,1]:
+    for climnum in range(len(MAT)):
+        plt.plot(ECM_pct,(protN+unprotN)[:,claynum,climnum],ms=4,marker=markers[claynum],c=cmap(norm(MAT[climnum])),label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
+
+plt.xlabel('ECM percent (%)')
+plt.ylabel('Total N stock')
+# plt.legend()
+plt.title('Total N stock')
+
+plt.subplot(313)
+for claynum in [0,1]:
+    for climnum in range(len(MAT)):
+        plt.plot(ECM_pct,((protC+unprotC)/(protN+unprotN))[:,claynum,climnum],ms=4,marker=markers[claynum],c=cmap(norm(MAT[climnum])),label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
+
+plt.xlabel('ECM percent (%)')
+plt.ylabel('C:N ratio')
+# plt.legend()
+plt.title('C:N ratio')
+plt.legend(fontsize='small')
+
+
+plt.figure('Myco effect vs decomp rate');plt.clf()
+protCfracdiff = protCfrac[-1,:,:]-protCfrac[0,:,:]
+# plt.scatter(unprotC/total_inputs,protCfrac)
+for claynum in [0,1]:
+    for climnum in range(len(MAT)):
+        plt.plot(unprotC[:,claynum,climnum]/total_inputs,protCfrac[:,claynum,climnum],marker=markers[claynum],c=cmap(norm(MAT[climnum])),label='Clay={claypct:1.1f}%, MAT={mat:1.1f}C'.format(claypct=clay[claynum],mat=MAT[climnum]))
+
+plt.xlabel('Unprotected C turnover time (years)')
+plt.ylabel('Protected C fraction')
+
+
 
 plt.show()
